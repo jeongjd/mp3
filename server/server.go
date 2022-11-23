@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -14,37 +15,38 @@ import (
 )
 
 type Message struct {
-	receiverID     string
-	senderID       string
 	messageContent string
+	node           string
+	round          int
 }
 
 var (
 	// Map - key: (client) username, value: connection
 	clientConnections = make(map[string]net.Conn)
 
-	// For switch/cases - printing error messages
-	option = 0
-
 	// Read/Write mutex to synchronize the clientConnections hashmap between the threads (instead of a channel)
 	clientConnectionsMutex = sync.RWMutex{}
 )
 
 func main() {
-	var port string
-	fmt.Print("Enter a port number: ")
-	fmt.Scanln(&port)
-	port = ":" + port
-
-	fmt.Println("Launching a TCP Chatroom Server...")
-
-	l, err := net.Listen("tcp4", port)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer l.Close()
-	for {
+	// var port string
+	// fmt.Print("Enter a port number: ")
+	// fmt.Scanln(&port)
+	// port = ":" + port
+	totalNodes := 10
+	portNum := 1111
+	for i := 0; i < totalNodes; i++ {
+		portNum += i
+		port := strconv.Itoa(portNum)
+		fmt.Println("Launching a TCP Chatroom Server...")
+		l, err := net.Listen("tcp4", ":"+port)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		defer l.Close()
+		messages := make(chan Message)
+		go createTCPClient(port, messages)
 		c, err := l.Accept()
 		if err != nil {
 			fmt.Println(err)
@@ -52,6 +54,17 @@ func main() {
 		}
 		go handleConnection(c)
 	}
+}
+
+func createTCPClient(port string, messages chan Message) {
+	fmt.Println("creating a TCP client...")
+	hostAddress := "127.0.0.1"
+	c, err := net.Dial("tcp", hostAddress+":"+port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	go read(c, messages)
+	write(c)
 }
 
 // Handle client connections - invoke other functions depending on the messages received
@@ -87,10 +100,8 @@ func broadcastMessage(m Message) {
 	clientConnectionsMutex.RLock()
 	defer clientConnectionsMutex.RUnlock()
 	for item := range clientConnections {
-		if item == m.receiverID {
-			enc := gob.NewEncoder(clientConnections[item])
-			enc.Encode(m.messageContent)
-		}
+		enc := gob.NewEncoder(clientConnections[item])
+		enc.Encode(m.messageContent)
 	}
 }
 
@@ -130,5 +141,33 @@ func approximateConsensus() {
 	// round := 1
 	// sum := 0
 	// messageNum := 0
+}
 
+func read(c net.Conn, messages chan Message) {
+	for {
+		dec := gob.NewDecoder(c)
+		msg := new(Message)
+		err := dec.Decode(&msg)
+		if err != io.EOF && err != nil {
+			log.Fatal(err)
+		}
+		messages <- *msg
+		fmt.Println(msg)
+		fmt.Print(">> ")
+	}
+}
+
+func write(c net.Conn) {
+	for {
+		reader := bufio.NewReader(os.Stdin)
+		message, err := reader.ReadString('\n')
+		if err != nil {
+			return
+		}
+
+		enc := gob.NewEncoder(c)
+		if err := enc.Encode(message); err != nil {
+			log.Fatal(err)
+		}
+	}
 }
