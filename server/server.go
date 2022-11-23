@@ -105,13 +105,30 @@ func broadcastMessage(m Message) {
 	}
 }
 
-func readConfig() {
+func readConfig() map[int][]string {
+	// open "config.txt" file
 	file, err := os.Open("config.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Delay closing of the file until other functions return
 	defer file.Close()
-	// store data into a hashmap (host address, port etc)
+
+	configData := make(map[int][]string)
+	scanner := bufio.NewScanner(file)
+	currentLineNum := 0
+	configLine := ""
+	for scanner.Scan() {
+		configLine = (scanner.Text())
+		configLineParsed := parseLine(configLine)
+		configData[currentLineNum] = configLineParsed
+		currentLineNum++
+	}
+
+	if err = scanner.Err(); err != nil {
+		log.Fatal(err)
+	}
+	return configData
 }
 
 func delayTime() int {
